@@ -215,23 +215,49 @@ daily_hr["acute_7d"] = daily_hr["load"].rolling(7, min_periods=1).mean()
 daily_hr["chronic_28d"] = daily_hr["load"].rolling(28, min_periods=1).mean()
 daily_hr["acwr"] = daily_hr["acute_7d"] / daily_hr["chronic_28d"].replace(0, np.nan)
 
-# Chart
-chart = alt.Chart(daily_hr).transform_fold(
-    ["load", "acute_7d", "chronic_28d", "acwr"],
+# ----------------------------
+# Charts: (1) Load/Acute/Chronic  (2) ACWR on its own scale
+# ----------------------------
+
+# 1) Load + acute + chronic
+chart_load = alt.Chart(daily_hr).transform_fold(
+    ["load", "acute_7d", "chronic_28d"],
     as_=["metric", "value"]
 ).mark_line().encode(
     x=alt.X("date:T", title="Дата"),
-    y=alt.Y("value:Q", title="Стойност"),
+    y=alt.Y("value:Q", title="Натоварване (load units)"),
     color=alt.Color("metric:N", title="Метрика"),
     tooltip=[
         alt.Tooltip("date:T", title="Дата"),
         alt.Tooltip("metric:N", title="Метрика"),
         alt.Tooltip("value:Q", title="Стойност", format=".2f"),
     ]
-).properties(height=360)
+).properties(height=300)
 
-st.altair_chart(chart, use_container_width=True)
-st.dataframe(daily_hr.tail(21), use_container_width=True, hide_index=True)
+st.altair_chart(chart_load, use_container_width=True)
+
+# 2) ACWR only (own y-scale) + reference lines
+acwr_min, acwr_max = 0.0, 2.0
+
+acwr_line = alt.Chart(daily_hr).mark_line(point=True).encode(
+    x=alt.X("date:T", title="Дата"),
+    y=alt.Y("acwr:Q", title="ACWR", scale=alt.Scale(domain=[acwr_min, acwr_max])),
+    tooltip=[
+        alt.Tooltip("date:T", title="Дата"),
+        alt.Tooltip("acwr:Q", title="ACWR", format=".2f"),
+        alt.Tooltip("acute_7d:Q", title="Acute (7d avg)", format=".2f"),
+        alt.Tooltip("chronic_28d:Q", title="Chronic (28d avg)", format=".2f"),
+    ]
+).properties(height=260)
+
+# Reference band/lines (примерни прагове; можеш да ги смениш)
+ref = pd.DataFrame({"y": [0.8, 1.0, 1.3]})
+ref_lines = alt.Chart(ref).mark_rule(strokeDash=[6, 6]).encode(
+    y=alt.Y("y:Q", scale=alt.Scale(domain=[acwr_min, acwr_max]))
+)
+
+st.altair_chart(acwr_line + ref_lines, use_container_width=True)
+
 
 # Export weekly report CSV (as before)
 st.divider()
