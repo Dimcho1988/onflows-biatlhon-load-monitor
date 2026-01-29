@@ -157,27 +157,79 @@ area = alt.Chart(weekly_zone).mark_area().encode(
 ).properties(height=280)
 st.altair_chart(area, use_container_width=True)
 
-# weekly avg HR in zone (weighted by minutes)
+# ============================
+# Weekly avg HR in zone (weighted by minutes) + STRONG zone styling
+# ============================
+
+# 1) Compute weekly avg HR in each zone (weighted by minutes)
 weekly_hr = weekly_f.copy()
 weekly_hr["hr_x_min"] = weekly_hr["avg_hr"] * weekly_hr["minutes"]
+
 tmp = weekly_hr.groupby(["week", "zone"], as_index=False).agg(
     minutes=("minutes", "sum"),
     hr_x_min=("hr_x_min", "sum"),
 )
 tmp["avg_hr_in_zone"] = tmp["hr_x_min"] / tmp["minutes"].replace(0, np.nan)
 
-line = alt.Chart(tmp).mark_line(point=True).encode(
+# 2) Define zone boundaries (based on % of LTHR) so we can draw background bands
+z1 = 0.75 * lthr
+z2 = 0.85 * lthr
+z3 = 0.92 * lthr
+z4 = 1.00 * lthr
+
+# Bands: [low, high, zone]
+bands = pd.DataFrame([
+    {"zone": 1, "y0": 0,   "y1": z1},
+    {"zone": 2, "y0": z1,  "y1": z2},
+    {"zone": 3, "y0": z2,  "y1": z3},
+    {"zone": 4, "y0": z3,  "y1": z4},
+    {"zone": 5, "y0": z4,  "y1": max(205, float(tmp["avg_hr_in_zone"].max()) + 10)},
+])
+
+# 3) Common zone colors (widely used convention)
+ZONE_DOMAIN = [1, 2, 3, 4, 5]
+ZONE_RANGE  = [
+    "#9E9E9E",  # Z1 grey
+    "#2E7D32",  # Z2 green
+    "#F9A825",  # Z3 yellow
+    "#EF6C00",  # Z4 orange
+    "#C62828",  # Z5 red
+]
+
+# 4) Background bands
+band_layer = alt.Chart(bands).mark_rect(opacity=0.12).encode(
+    y=alt.Y("y0:Q", title="Среден HR в зоната (седмично)"),
+    y2="y1:Q",
+    color=alt.Color("zone:O", scale=alt.Scale(domain=ZONE_DOMAIN, range=ZONE_RANGE), legend=None),
+)
+
+# 5) HR lines (strong emphasis)
+line_layer = alt.Chart(tmp).mark_line(
+    point=alt.OverlayMarkDef(size=75),
+    strokeWidth=3.5
+).encode(
     x=alt.X("week:T", title="Седмица"),
-    y=alt.Y("avg_hr_in_zone:Q", title="Среден HR в зоната (седмично)"),
-    color=alt.Color("zone:O", title="Зона"),
+    y=alt.Y(
+        "avg_hr_in_zone:Q",
+        title="Среден HR в зоната (седмично)",
+        scale=alt.Scale(domain=[max(70, 0.60*lthr), min(210, 1.10*lthr)])
+    ),
+    color=alt.Color(
+        "zone:O",
+        title="Зона",
+        scale=alt.Scale(domain=ZONE_DOMAIN, range=ZONE_RANGE),
+        legend=alt.Legend(orient="right", titleFontSize=14, labelFontSize=13)
+    ),
     tooltip=[
         alt.Tooltip("week:T", title="Седмица"),
         alt.Tooltip("zone:O", title="Зона"),
         alt.Tooltip("avg_hr_in_zone:Q", title="Среден HR", format=".0f"),
         alt.Tooltip("minutes:Q", title="Минути", format=".0f"),
     ],
-).properties(height=280)
-st.altair_chart(line, use_container_width=True)
+)
+
+st.altair_chart((band_layer + line_layer).properties(height=320), use_container_width=True)
+
 
 # ----------------------------
 # 3) Stress index (ACWR-like) – CORRECT rolling logic
